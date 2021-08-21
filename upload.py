@@ -1,7 +1,5 @@
 #!/usr/bin/python
-
 # upload.py
-# In: Name of directory, date of airing, and when to publish
 
 import os
 import fnmatch
@@ -9,9 +7,21 @@ import sys
 import json
 import time
 import requests
+import random
+import datetime
 
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 from dotenv import load_dotenv
+
+#############
+# Todo:
+# - Sanitize inputs
+# - Progress bar for uploading + for waiting
+# - extract filename and verify assumptions
+#  ->>> Assumptions:
+# - There is one .mp3 in each subdirectory of a show
+# - There is one .jpg in each subdirectory for a show
+#############
 
 # Load .env variables
 load_dotenv()
@@ -19,22 +29,13 @@ load_dotenv()
 MIXCLOUD_ACCESS_KEY = os.getenv('MIXCLOUD_ACCESS_KEY')
 FOLDER_SKIP = os.getenv('FOLDER_SKIP')
 
-# Assumptions:
-# - There is one .mp3 in each subdirectory of a show
-# - There is one .jpg in each subdirectory for a show
-
 # Send POST Request to Mixcloud with passed data
-# Returns: Int
+# Returns: Reponse obj
 def send_post_request(data):
     response = requests.post(MIXCLOUD_ACCESS_KEY, data=data, headers={'Content-Type': data.content_type})
-    # Debug
-    print(response.json())
-    if response.status_code != 200:
-        return response.json()["error"]["retry_after"] + 10
-    else :
-        return 0
+    return response
 
-# Takes passed data and 
+# Takes passed data and returns an encoder obj
 # Returns: MultipartEncoder object
 def create_show_request(artist, airdate, root, date, time):
     showname_title = artist + " for SNS - " + airdate
@@ -61,33 +62,57 @@ def create_show_request(artist, airdate, root, date, time):
             'publish_date':publish_str,
             }
         )
-
     return m
 
-def main():
+# Validates data string, throws error if incorrect format
+def validate_date(date_text):
+    try:
+        datetime.datetime.strptime(date_text, '%Y-%m-%d')
+    except ValueError:
+        raise ValueError("Incorrect data format, should be YYYY-MM-DD")
 
+# Validates time string, throws error if incorrect format
+def validate_time(time_text):
+    try:
+        datetime.datetime.strptime(time_text, '%H:%M:%S')
+    except ValueError:
+        raise ValueError("Incorrect data format, should be HH:MM:SS")
+
+# Validates inputs
+def validate_inputs(date, time):
+    validate_date(date)
+    validate_time(time)
+
+def main():
     # Handle flags
     # Bypass input (for testing):
-    if sys.argv[1] == '--bypass':
+    if '--usage' in sys.argv[1:]:
+        print('--bypass: Inputs are automatically filled for testing')
+        quit()
+    elif '--bypass' in sys.argv[1:]:
         target_dir = 'SHOW 2'
         mixcloud_airdate = '5th August 2021'
-        publish_date = '2021-08-23'
-        publish_time = '00:00:00'
+        mixcloud_publish_date = '2021-08-23'
+        mixcloud_publish_time = '00:00:00'
     else:
         target_dir = raw_input("Enter target directory: ")
         mixcloud_airdate = raw_input("Enter airing date (ex: 1st January 2022): ")
-        mixcluoud_publish_date = raw_input("Enter publish date (YYYY-MM-DD): ")
+        mixcloud_publish_date = raw_input("Enter publish date (YYYY-MM-DD): ")
         mixcloud_publish_time = raw_input("Enter publish time (UTC Time HH:MM:SS): ")
+
+    validate_inputs(mixcloud_publish_date, mixcloud_publish_time)
 
     encoder_queue = []
 
     # Example directory:
-    # London Show 4 (target_dir)
-    # -- DJ Elephant (artist_dir)
-    # -- The Podcast Show (artist_dir)
-    # -- The Band (artist_dir)
-    # -- Talk show (artist_dir)
+    # - root
+    # ---London Show 4 (target_dir)
+    # ---- DJ Elephant (artist_dir)
+    # ---- The Podcast Show (artist_dir)
+    # ---- The Band (artist_dir)
+    # ---- Talk show (artist_dir)
 
+    # Traverse directory tree starting from root in search for target_dir
     for root, dirs, files  in os.walk("."):
         path = root.split(os.sep)
 
@@ -102,25 +127,25 @@ def main():
                 if artist_dir in FOLDER_SKIP:
                     continue
 
-                encoder_data = create_show_request(artist_dir, mixcloud_airdate, root, publish_date, publish_time)
+                encoder_data = create_show_request(artist_dir, mixcloud_airdate, root, mixcloud_publish_date, mixcloud_publish_time)
                 encoder_queue.append(encoder_data)
 
-
     # Traverse queue and execute requests
-    for x in encoder_queue:
-        successful = False
-        while not successful:
-            print('Trying a request: ')
-            print(x)
-            response = send_post_request(x)
-            if response != 0:
-                print('Response is an error')
-                print('Resetting after sleeping for ' + str(response) + ' seconds')
-                time.sleep(response)
-            else:
-                print('Sucessfully uploaded!')
-                break
-
+    for post_request_data in encoder_queue:
+        print('Trying a POST request to Mixcloud: ')
+        print(post_request_data)
+        response = send_post_request(post_request_data)
+        #Debug
+        print(response.json())
+        if response.status_code != 200:
+            retry_time = response.json()["error"]["retry_after"]
+            print('Response is an error!')
+            print('Trying this request later...')
+            encoder_queue.append(post_request_data)
+            print('Resetting after sleeping for ' + str(retry_time) + ' seconds')
+            time.sleep(retry_time)
+        else:
+            print('Sucessfully uploaded!')
 
 if __name__ == "__main__":
     main()
