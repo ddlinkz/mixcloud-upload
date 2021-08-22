@@ -9,8 +9,9 @@ import time
 import requests
 import random
 import datetime
+from alive_progress import alive_bar
 
-from requests_toolbelt.multipart.encoder import MultipartEncoder
+from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 from dotenv import load_dotenv
 
 #############
@@ -18,6 +19,7 @@ from dotenv import load_dotenv
 # - Sanitize inputs
 # - Progress bar for uploading + for waiting
 # - extract filename and verify assumptions
+# - timeout
 #  ->>> Assumptions:
 # - There is one .mp3 in each subdirectory of a show
 # - There is one .jpg in each subdirectory for a show
@@ -28,6 +30,9 @@ load_dotenv()
 
 MIXCLOUD_ACCESS_KEY = os.getenv('MIXCLOUD_ACCESS_KEY')
 FOLDER_SKIP = os.getenv('FOLDER_SKIP')
+
+print(FOLDER_SKIP)
+print(type(FOLDER_SKIP))
 
 # Send POST Request to Mixcloud with passed data
 # Returns: Reponse obj
@@ -64,6 +69,15 @@ def create_show_request(artist, airdate, root, date, time):
         )
     return m
 
+# Takes data and creates a dictionary with 
+def create_show_request_entry(artist, airdate, root, date, time):
+    entry = {'artist': artist,
+              'airdate': airdate,
+              'root': root,
+              'date': date,
+              'time': time}
+    return entry
+
 # Validates data string, throws error if incorrect format
 def validate_date(date_text):
     try:
@@ -83,6 +97,23 @@ def validate_inputs(date, time):
     validate_date(date)
     validate_time(time)
 
+# Progress bar functions
+def wait_progress_bar(seconds):
+    with alive_bar(seconds, spinner='notes') as bar:
+        for i in range(seconds):
+            time.sleep(1)
+            bar()
+
+# Callback for progress bar during request
+def create_callback(encoder):
+    encoder_len = len(encoder)
+    bar = alive_bar(encoder_len)
+
+    def callback(monitor):
+        bar()
+
+    return callback
+
 def main():
     # Handle flags
     # Bypass input (for testing):
@@ -92,7 +123,8 @@ def main():
     elif '--bypass' in sys.argv[1:]:
         target_dir = 'SHOW 2'
         mixcloud_airdate = '5th August 2021'
-        mixcloud_publish_date = '2021-08-23'
+        week_later_date = datetime.datetime.today() + datetime.timedelta(days=7)
+        mixcloud_publish_date = week_later_date.strftime('%Y-%m-%d')
         mixcloud_publish_time = '00:00:00'
     else:
         target_dir = raw_input("Enter target directory: ")
@@ -127,23 +159,39 @@ def main():
                 if artist_dir in FOLDER_SKIP:
                     continue
 
-                encoder_data = create_show_request(artist_dir, mixcloud_airdate, root, mixcloud_publish_date, mixcloud_publish_time)
-                encoder_queue.append(encoder_data)
+                entry = create_show_request_entry(artist_dir, mixcloud_airdate, root, mixcloud_publish_date, mixcloud_publish_time)
+                encoder_queue.append(entry)
 
     # Traverse queue and execute requests
     for post_request_data in encoder_queue:
         print('Trying a POST request to Mixcloud: ')
-        print(post_request_data)
-        response = send_post_request(post_request_data)
-        #Debug
+
+        # Now, create request before sending
+        post_request_encoder = create_show_request(post_request_data["artist"],
+                                                   post_request_data["airdate"],
+                                                   post_request_data["root"],
+                                                   post_request_data["date"],
+                                                   post_request_data["time"])
+
+        print(post_request_encoder)
+
+        response = send_post_request(post_request_encoder)
+
+        # Debug
         print(response.json())
+
         if response.status_code != 200:
             retry_time = response.json()["error"]["retry_after"]
             print('Response is an error!')
             print('Trying this request later...')
+
+            # Modify data before appending, this is so the request will be accepted by the server
+            new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') + datetime.timedelta(minutes=2)
+            post_request_data["time"] = new_time.strftime('%H:%M:%S')
+
             encoder_queue.append(post_request_data)
             print('Resetting after sleeping for ' + str(retry_time) + ' seconds')
-            time.sleep(retry_time)
+            wait_progress_bar(retry_time)
         else:
             print('Sucessfully uploaded!')
 
