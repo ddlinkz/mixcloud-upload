@@ -212,20 +212,20 @@ def main():
         # Debug
         print(response.json())
 
-        # if response.status_code != 200:
-        #     retry_time = response.json()["error"]["retry_after"]
-        #     print('Response is an error!')
-        #     print('Trying this request later...')
+        if response.status_code != 200:
+            retry_time = response.json()["error"]["retry_after"]
+            print('Response is an error!')
+            print('Trying this request later...')
 
-        #     # Modify data before appending, this is so the request will be accepted by the server
-        #     new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') + datetime.timedelta(minutes=2)
-        #     post_request_data["time"] = new_time.strftime('%H:%M:%S')
+            # Modify data before appending, this is so the request will be accepted by the server
+            new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') + datetime.timedelta(minutes=2)
+            post_request_data["time"] = new_time.strftime('%H:%M:%S')
 
-        #     encoder_queue.append(post_request_data)
-        #     print('Resetting after sleeping for ' + str(retry_time) + ' seconds')
-        #     wait_progress_bar(retry_time)
-        # else:
-        #     print('Sucessfully uploaded!')
+            encoder_queue.append(post_request_data)
+            print('Resetting after sleeping for ' + str(retry_time) + ' seconds')
+            wait_progress_bar(retry_time)
+        else:
+            print('Sucessfully uploaded!')
 
 if __name__ == "__main__":
     main()
