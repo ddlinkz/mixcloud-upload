@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 #############
 # Todo:
 # - Progress bar for uploading + for waiting
-# - export list of embeds
 # - Response code testing
 #############
 
@@ -239,6 +238,8 @@ def main():
             success_list.append(response.json()["result"]["key"])
 
     print('Uploaded ' + str(len(success_list)) + ' shows from ' + target_dir + '!')
+
+    # Store HTML embeds for future use if flag is turned on
     if embed_flag:
         print('Storing HTML iframe embeds in embedcode.txt...')
         with open('embedcode.txt', 'w') as file:
