@@ -30,14 +30,18 @@ FOLDER_SKIP = os.getenv('FOLDER_SKIP')
 # Handles flags
 # Returns: Str, Str, Str, Str
 def handle_flags(flags):
+    embed_flag = False
     if '--usage' in flags:
         print('--bypass: Inputs are automatically filled for testing')
         print('--embed X: Export ')
         quit()
+    if '--embed' in flags:
+        print('Exporting embeds at the end of upload...')
+        embed_flag = True
     # Bypass input (for testing):
-    elif '--bypass' in flags:
-        target_dir = 'SHOW 2'
-        mixcloud_airdate = '5th August 2021'
+    if '--bypass' in flags:
+        target_dir = 'SHOW2'
+        mixcloud_airdate = 'TEST TEST'
         week_later_date = datetime.datetime.today() + datetime.timedelta(days=7)
         mixcloud_publish_date = week_later_date.strftime('%Y-%m-%d')
         mixcloud_publish_time = '00:00:00'
@@ -46,7 +50,7 @@ def handle_flags(flags):
         mixcloud_airdate = raw_input("Enter airing date (ex: 1st January 2022): ")
         mixcloud_publish_date = raw_input("Enter publish date (YYYY-MM-DD): ")
         mixcloud_publish_time = raw_input("Enter publish time (UTC Time HH:MM:SS): ")
-    return target_dir, mixcloud_airdate, mixcloud_publish_date, mixcloud_publish_time
+    return target_dir, mixcloud_airdate, mixcloud_publish_date, mixcloud_publish_time, embed_flag
 
 # Send POST Request to Mixcloud with passed data
 # Returns: Reponse obj
@@ -81,29 +85,27 @@ def create_show_request(artist, airdate, root, date, time):
 # Given path, walks through directory to find files, which are only allowed 1 of
 # Returns: String tuple, None if files are invalid
 def locate_filenames(path):
-    # Create patterns to locate filenames
-    mp3pattern = '*.mp3'
-    jpgpattern = '*.jpg'
-
     # Walk through the given path to find files
     for _, _, potential_files in os.walk(path):
 
         # Filters used for matching
-        mp3_file_filter = fnmatch.filter(potential_files, mp3pattern)
-        jpg_file_filter = fnmatch.filter(potential_files, jpgpattern)
+        mp3_file_filter = fnmatch.filter(potential_files, '*.mp3')
+        jpg_file_filter = fnmatch.filter(potential_files, '*.jpg')
 
-        for mp3_filename in mp3_file_filter:
-            if len(mp3_file_filter) > 1 or len(mp3_file_filter) == 0:
-                print('Can\'t find .mp3 for show (check folder for only 1 .mp3)')
-                return None, None
-            print('Using file: ' + mp3_filename)
-        for jpg_filename in jpg_file_filter:
-            if len(jpg_file_filter) > 1 or len(jpg_file_filter) == 0:
-                print('Can\'t find .jpg for show (check folder for only 1 .jpg)')
-                return None, None
-            print('Using file: ' + jpg_filename)
+        if len(mp3_file_filter) == 0 or len(mp3_file_filter) > 2:
+            print('Can\'t find .mp3 for show (check folder for only 1 .mp3)')
+            return None, None
+        if len(jpg_file_filter) == 0 or len(jpg_file_filter) > 2:
+            print('Can\'t find .jpg for show (check folder for only 1 .mp3)')
+            return None, None
 
-    return mp3_filename, jpg_filename
+        mp3_fn = mp3_file_filter[0]
+        jpg_fn = jpg_file_filter[0]
+
+        print('Using audio file: + ' + mp3_fn)
+        print('Using file: ' + jpg_fn)
+
+    return mp3_fn, jpg_fn
 
 
 # Takes data and creates a dictionary entry
@@ -156,9 +158,16 @@ def create_callback(encoder):
 
     return callback
 
+# Given a key, output the string for an iframe
+def get_iframe(key):
+    src = "https://www.mixcloud.com/widget/iframe/?feed=" + key.replace("/", "%2F")
+    return "<iframe width=\"100%\" height=\"400\"" + src + " frameborder=\"0\" ></iframe> \n"
+
 def main():
-    target_dir, mixcloud_airdate, mixcloud_publish_date, mixcloud_publish_time = handle_flags(sys.argv[1:])
+    target_dir, mixcloud_airdate, mixcloud_publish_date, mixcloud_publish_time, embed_flag = handle_flags(sys.argv[1:])
     validate_inputs(mixcloud_publish_date, mixcloud_publish_time)
+
+    print(embed_flag)
 
     # Example directory:
     # - root
@@ -169,6 +178,7 @@ def main():
     # ---- Talk show (artist_dir)
 
     encoder_queue = []
+    success_list = []
 
     # Traverse directory tree starting from root in search for target_dir
     for root, dirs, _ in os.walk("."):
@@ -226,6 +236,14 @@ def main():
             wait_progress_bar(retry_time)
         else:
             print('Sucessfully uploaded!')
+            success_list.append(response.json()["result"]["key"])
+
+    print('Uploaded ' + str(len(success_list)) + ' shows from ' + target_dir + '!')
+    if embed_flag:
+        print('Storing HTML iframe embeds in embedcode.txt...')
+        with open('embedcode.txt', 'w') as file:
+            for key in success_list:
+                file.write(get_iframe(key))
 
 if __name__ == "__main__":
     main()
