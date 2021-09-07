@@ -26,30 +26,56 @@ load_dotenv()
 MIXCLOUD_ACCESS_KEY = os.getenv('MIXCLOUD_ACCESS_KEY')
 FOLDER_SKIP = os.getenv('FOLDER_SKIP')
 
+# Flags class for easier readability
+class Flags:
+    """Flags class for passing between functions"""
+    def __init__(self):
+        self.embed = False
+        self.target = ''
+        self.airdate = ''
+        self.pdate = ''
+        self.ptime = ''
+
+    def set_embed(self):
+        self.embed = not self.embed
+
+    def set_target(self, target):
+        self.target = target
+
+    def set_airdate(self, airdate):
+        self.airdate = airdate
+
+    def set_pdate(self, pdate):
+        self.pdate = pdate
+
+    def set_ptime(self, ptime):
+        self.ptime = ptime
+
 # Handles flags
 # Returns: Str, Str, Str, Str
 def handle_flags(flags):
-    embed_flag = False
+    f = Flags()
     if '--usage' in flags:
         print('--bypass: Inputs are automatically filled for testing')
-        print('--embed X: Export ')
+        print('--embed: Writes file embedcodt.txt that contains embed HTML for each Mixcloud mix')
         quit()
     if '--embed' in flags:
         print('Exporting embeds at the end of upload...')
-        embed_flag = True
+        f.set_embed()
     # Bypass input (for testing):
     if '--bypass' in flags:
-        target_dir = 'SHOW2'
-        mixcloud_airdate = 'TEST TEST'
         week_later_date = datetime.datetime.today() + datetime.timedelta(days=7)
-        mixcloud_publish_date = week_later_date.strftime('%Y-%m-%d')
-        mixcloud_publish_time = '00:00:00'
+
+        f.set_target('SHOW2')
+        f.set_airdate('TEST TEST')
+        f.set_pdate(week_later_date.strftime('%Y-%m-%d'))
+        f.set_ptime('00:00:00')
     else:
-        target_dir = raw_input("Enter target directory: ")
-        mixcloud_airdate = raw_input("Enter airing date (ex: 1st January 2022): ")
-        mixcloud_publish_date = raw_input("Enter publish date (YYYY-MM-DD): ")
-        mixcloud_publish_time = raw_input("Enter publish time (UTC Time HH:MM:SS): ")
-    return target_dir, mixcloud_airdate, mixcloud_publish_date, mixcloud_publish_time, embed_flag
+        f.set_target(raw_input("Enter target directory: "))
+        f.set_airdate(raw_input("Enter airing date (ex: 1st January 2022): "))
+        f.set_pdate(raw_input("Enter publish date (YYYY-MM-DD): "))
+        f.set_ptime(raw_input("Enter publish time (UTC Time HH:MM:SS): "))
+    return f
 
 # Send POST Request to Mixcloud with passed data
 # Returns: Reponse obj
@@ -60,9 +86,9 @@ def send_post_request(data):
 # Takes passed data and returns an encoder obj
 # Returns: MultipartEncoder object
 def create_show_request(artist, airdate, root, date, time):
-    showname_title = artist + " for SNS - " + airdate
-    path_to_show = root + "/" + artist
-    publish_str = date + "T" + time + "Z"
+    showname_title = "{0} for SNS - {1} ".format(artist, airdate)
+    path_to_show = "{0}/{1}".format(root, artist)
+    publish_str = "{0}T{1}Z".format(date, time)
 
     print("Attempting encode for " + showname_title + " in " + artist)
     mp3, jpg = locate_filenames(path_to_show)
@@ -72,10 +98,10 @@ def create_show_request(artist, airdate, root, date, time):
     # Create requests data
     m = MultipartEncoder(
         fields={
-            'mp3': ('track.mp3', open(path_to_show + "/" + mp3, 'rb'), 'text/plain'),
-            'picture': ('picture.jpg', open(path_to_show + "/" + jpg, 'rb')),
+            'mp3': ('track.mp3', open("{0}/{1}".format(path_to_show, mp3), 'rb'), 'text/plain'),
+            'picture': ('picture.jpg', open("{0}/{1}".format(path_to_show, jpg), 'rb')),
             'name': showname_title, 
-            'description': artist + " for SNS.", 
+            'description': "{0} for SNS.".format(artist), 
             'publish_date': publish_str,
             }
         )
@@ -91,18 +117,18 @@ def locate_filenames(path):
         mp3_file_filter = fnmatch.filter(potential_files, '*.mp3')
         jpg_file_filter = fnmatch.filter(potential_files, '*.jpg')
 
-        if len(mp3_file_filter) == 0 or len(mp3_file_filter) > 2:
+        if len(mp3_file_filter) != 1:
             print('Can\'t find .mp3 for show (check folder for only 1 .mp3)')
             return None, None
-        if len(jpg_file_filter) == 0 or len(jpg_file_filter) > 2:
+        if len(jpg_file_filter) != 1:
             print('Can\'t find .jpg for show (check folder for only 1 .mp3)')
             return None, None
 
         mp3_fn = mp3_file_filter[0]
         jpg_fn = jpg_file_filter[0]
 
-        print('Using audio file: + ' + mp3_fn)
-        print('Using file: ' + jpg_fn)
+        print('Using audio file: {0}'.format(mp3_fn))
+        print('Using file: {0}'.format(jpg_fn))
 
     return mp3_fn, jpg_fn
 
@@ -157,16 +183,20 @@ def create_callback(encoder):
 
     return callback
 
-# Given a key, output the string for an iframe
+# Given a key, returns the string for an iframe
+# Returns: Str
 def get_iframe(key):
     src = "https://www.mixcloud.com/widget/iframe/?feed=" + key.replace("/", "%2F")
-    return "<iframe width=\"100%\" height=\"400\"" + src + " frameborder=\"0\" ></iframe> \n"
+    width = '\"100%\"'
+    height = '\"400\"'
+    frameborder = '\"0\"'
+    return "<iframe width={0} height={1} {2} frameborder={3} ></iframe> \n".format(width, height, src, frameborder)
 
 def main():
-    target_dir, mixcloud_airdate, mixcloud_publish_date, mixcloud_publish_time, embed_flag = handle_flags(sys.argv[1:])
-    validate_inputs(mixcloud_publish_date, mixcloud_publish_time)
+    flags = handle_flags(sys.argv[1:])
+    validate_inputs(flags.pdate, flags.ptime)
 
-    print(embed_flag)
+    print(flags.embed)
 
     # Example directory:
     # - root
@@ -184,8 +214,8 @@ def main():
         path = root.split(os.sep)
 
         # If root (current dir) = target_dir, found it
-        if(os.path.basename(root) == target_dir):
-            print('Found your target directory...: ' + target_dir)
+        if(os.path.basename(root) == flags.target):
+            print('Found your target directory...: {0}'.format(flags.target))
 
             # Create request encoding for each show
             for artist_dir in dirs:
@@ -194,7 +224,11 @@ def main():
                 if artist_dir in FOLDER_SKIP:
                     continue
 
-                entry = create_show_request_entry(artist_dir, mixcloud_airdate, root, mixcloud_publish_date, mixcloud_publish_time)
+                entry = create_show_request_entry(artist_dir, 
+                                                  flags.airdate, 
+                                                  root, 
+                                                  flags.pdate, 
+                                                  flags.ptime)
                 encoder_queue.append(entry)
 
     # Traverse queue and execute requests
@@ -231,16 +265,16 @@ def main():
             post_request_data["time"] = new_time.strftime('%H:%M:%S')
 
             encoder_queue.append(post_request_data)
-            print('Resetting after sleeping for ' + str(retry_time) + ' seconds')
+            print('Resetting after sleeping for {0} seconds'.format(str(retry_time)))
             wait_progress_bar(retry_time)
         else:
             print('Sucessfully uploaded!')
             success_list.append(response.json()["result"]["key"])
 
-    print('Uploaded ' + str(len(success_list)) + ' shows from ' + target_dir + '!')
+    print('Uploaded {0} shows from {1} !'.format(str(len(success_list)), flags.target))
 
     # Store HTML embeds for future use if flag is turned on
-    if embed_flag:
+    if flags.embed:
         print('Storing HTML iframe embeds in embedcode.txt...')
         with open('embedcode.txt', 'w') as file:
             for key in success_list:
