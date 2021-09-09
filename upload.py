@@ -9,6 +9,7 @@ import time
 import requests
 import random
 import datetime
+
 from alive_progress import alive_bar
 
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
@@ -17,7 +18,6 @@ from dotenv import load_dotenv
 #############
 # Todo:
 # - Progress bar for uploading + for waiting
-# - Response code testing
 #############
 
 # Load .env variables
@@ -142,12 +142,20 @@ def process_queue(request_queue):
         print(response.json())
 
         if response.status_code != 200:
+            print('Response is an error!')
+            if "retry_after" not in response.json()["error"]:
+                print('Something is wrong with the data.')
+                print('Can\'t retry this... here\'s what it says:')
+                print(response.json())
+                continue
+
             retry_time = response.json()["error"]["retry_after"]
             print('Response is an error!')
             print('Trying this request later...')
 
             # Modify data before appending, this is so the request will be accepted by the server
-            new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') + datetime.timedelta(minutes=2)
+            new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') 
+                                                             + datetime.timedelta(minutes=2)
             new_post_request_data = post_request_data
             new_post_request_data["time"] = new_time.strftime('%H:%M:%S')
             remain.append(new_post_request_data)
@@ -242,21 +250,14 @@ def get_iframe(key):
     width = '\"100%\"'
     height = '\"400\"'
     frameborder = '\"0\"'
-    return "<iframe width={0} height={1} {2} frameborder={3} ></iframe> \n".format(width, height, src, frameborder)
+    return "<iframe width={0} height={1} {2} frameborder={3} ></iframe> \n".format(width,
+                                                                                   height, 
+                                                                                   src, 
+                                                                                   frameborder)
 
 def main():
     flags = handle_flags(sys.argv[1:])
     validate_inputs(flags.pdate, flags.ptime)
-
-    print(flags.embed)
-
-    # Example directory:
-    # - root
-    # ---London Show 4 (target_dir)
-    # ---- DJ Elephant (artist_dir)
-    # ---- The Podcast Show (artist_dir)
-    # ---- The Band (artist_dir)
-    # ---- Talk show (artist_dir)
 
     encoder_queue = []
 
