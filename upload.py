@@ -121,7 +121,6 @@ def process_queue(request_queue):
     for post_request_data in request_queue:
         print('Encoding form data...')
 
-        print(post_request_data)
         # Now, create request before sending
         post_request_encoder = create_show_request(post_request_data["artist"],
                                                    post_request_data["airdate"],
@@ -260,8 +259,6 @@ def main():
     # ---- Talk show (artist_dir)
 
     encoder_queue = []
-    retry_queue = []
-    success_list = []
 
     # Traverse directory tree starting from root in search for target_dir
     for root, dirs, _ in os.walk("."):
