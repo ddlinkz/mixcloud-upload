@@ -25,6 +25,7 @@ load_dotenv()
 
 MIXCLOUD_ACCESS_KEY = os.getenv('MIXCLOUD_ACCESS_KEY')
 FOLDER_SKIP = os.getenv('FOLDER_SKIP')
+WORKING_DIR = os.getenv('WORKING_DIR')
 
 # Flags class for easier readability
 class Flags:
@@ -154,8 +155,7 @@ def process_queue(request_queue):
             print('Trying this request later...')
 
             # Modify data before appending, this is so the request will be accepted by the server
-            new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') 
-                                                             + datetime.timedelta(minutes=2)
+            new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') + datetime.timedelta(minutes=2)
             new_post_request_data = post_request_data
             new_post_request_data["time"] = new_time.strftime('%H:%M:%S')
             remain.append(new_post_request_data)
@@ -256,6 +256,12 @@ def get_iframe(key):
                                                                                    frameborder)
 
 def main():
+    print("Moving to: {0}".format(WORKING_DIR))
+    try:
+        os.chdir(WORKING_DIR)
+    except Error:
+        print('Moving to {0} resulted in an error.'.format(WORKING_DIR))
+
     flags = handle_flags(sys.argv[1:])
     validate_inputs(flags.pdate, flags.ptime)
 
