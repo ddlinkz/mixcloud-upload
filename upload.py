@@ -36,8 +36,8 @@ class Flags:
         self.pdate = ''
         self.ptime = ''
 
-    def set_embed(self):
-        self.embed = not self.embed
+    def set_embed(self, boolean):
+        self.embed = boolean
 
     def set_target(self, target):
         self.target = target
@@ -52,7 +52,7 @@ class Flags:
         self.ptime = ptime
 
 # Handles flags
-# Returns: Str, Str, Str, Str
+# Returns: Flags type
 def handle_flags(flags):
     f = Flags()
     if '--usage' in flags:
@@ -61,7 +61,7 @@ def handle_flags(flags):
         quit()
     if '--embed' in flags:
         print('Exporting embeds at the end of upload...')
-        f.set_embed()
+        f.set_embed(True)
     # Bypass input (for testing):
     if '--bypass' in flags:
         week_later_date = datetime.datetime.today() + datetime.timedelta(days=7)
@@ -80,7 +80,10 @@ def handle_flags(flags):
 # Send POST Request to Mixcloud with passed data
 # Returns: Reponse obj
 def send_post_request(data):
-    response = requests.post(MIXCLOUD_ACCESS_KEY, data=data, headers={'Content-Type': data.content_type}, timeout=180)
+    response = requests.post(MIXCLOUD_ACCESS_KEY, 
+                             data=data, 
+                             headers={'Content-Type': data.content_type}, 
+                             timeout=180)
     return response
 
 # Takes passed data and returns an encoder obj
@@ -107,6 +110,57 @@ def create_show_request(artist, airdate, root, date, time):
         )
     return m
 
+# Takes in an array of dicts, encodes each one then sends a request
+# Returns an array of modified dicts and array of dict keys
+# Returns: Arr, Arr
+def process_queue(request_queue):
+    remain = []
+    success = []
+
+    # Traverse queue and execute requests
+    for post_request_data in request_queue:
+        print('Encoding form data...')
+
+        print(post_request_data)
+        # Now, create request before sending
+        post_request_encoder = create_show_request(post_request_data["artist"],
+                                                   post_request_data["airdate"],
+                                                   post_request_data["root"],
+                                                   post_request_data["date"],
+                                                   post_request_data["time"])
+
+        if post_request_encoder is None:
+            print('Show contained invalid file inputs. Check directory again.')
+            continue
+
+        print('Trying a POST request to Mixcloud... ')
+
+        print(post_request_encoder)
+
+        response = send_post_request(post_request_encoder)
+
+        # Debug
+        print(response.json())
+
+        if response.status_code != 200:
+            retry_time = response.json()["error"]["retry_after"]
+            print('Response is an error!')
+            print('Trying this request later...')
+
+            # Modify data before appending, this is so the request will be accepted by the server
+            new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') + datetime.timedelta(minutes=2)
+            new_post_request_data = post_request_data
+            new_post_request_data["time"] = new_time.strftime('%H:%M:%S')
+            remain.append(new_post_request_data)
+
+            print('Resetting after sleeping for {0} seconds'.format(str(retry_time)))
+            wait_progress_bar(retry_time)
+        else:
+            print('Sucessfully uploaded!')
+            success.append(response.json()["result"]["key"])
+
+    return remain, success
+
 # Given path, walks through directory to find files, which are only allowed 1 of
 # Returns: String tuple, None if files are invalid
 def locate_filenames(path):
@@ -131,7 +185,6 @@ def locate_filenames(path):
         print('Using file: {0}'.format(jpg_fn))
 
     return mp3_fn, jpg_fn
-
 
 # Takes data and creates a dictionary entry
 # Returns: Dictionary
@@ -207,6 +260,7 @@ def main():
     # ---- Talk show (artist_dir)
 
     encoder_queue = []
+    retry_queue = []
     success_list = []
 
     # Traverse directory tree starting from root in search for target_dir
@@ -231,47 +285,15 @@ def main():
                                                   flags.ptime)
                 encoder_queue.append(entry)
 
-    # Traverse queue and execute requests
-    for post_request_data in encoder_queue:
-        print('Encoding form data...')
+    # Process queue for the first time
+    remaining_queue, success_list = process_queue(encoder_queue)
 
-        # Now, create request before sending
-        post_request_encoder = create_show_request(post_request_data["artist"],
-                                                   post_request_data["airdate"],
-                                                   post_request_data["root"],
-                                                   post_request_data["date"],
-                                                   post_request_data["time"])
+    # If there are any shows remaining, continue to process
+    while(len(remaining_queue) != 0):
+        remaining_queue, success = process_queue(remaining_queue)
+        success_list.extend(success)
 
-        if post_request_encoder is None:
-            print('Show contained invalid file inputs. Check directory again.')
-            continue
-
-        print(post_request_encoder)
-
-        print('Trying a POST request to Mixcloud... ')
-
-        response = send_post_request(post_request_encoder)
-
-        # Debug
-        print(response.json())
-
-        if response.status_code != 200:
-            retry_time = response.json()["error"]["retry_after"]
-            print('Response is an error!')
-            print('Trying this request later...')
-
-            # Modify data before appending, this is so the request will be accepted by the server
-            new_time = datetime.datetime.strptime(post_request_data.pop("time"), '%H:%M:%S') + datetime.timedelta(minutes=2)
-            post_request_data["time"] = new_time.strftime('%H:%M:%S')
-
-            encoder_queue.append(post_request_data)
-            print('Resetting after sleeping for {0} seconds'.format(str(retry_time)))
-            wait_progress_bar(retry_time)
-        else:
-            print('Sucessfully uploaded!')
-            success_list.append(response.json()["result"]["key"])
-
-    print('Uploaded {0} shows from {1} !'.format(str(len(success_list)), flags.target))
+    print('Uploaded {0} show(s) from {1}!'.format(str(len(success_list)), flags.target))
 
     # Store HTML embeds for future use if flag is turned on
     if flags.embed:
