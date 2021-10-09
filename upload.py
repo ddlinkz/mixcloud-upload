@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/bin/python3
 # upload.py
 
 import os
@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 #############
 # Todo:
 # - Progress bar for uploading + for waiting
+# - Check if date is ahead or not and ask again if its invalid
 #############
 
 # Load .env variables
@@ -72,10 +73,10 @@ def handle_flags(flags):
         f.set_pdate(week_later_date.strftime('%Y-%m-%d'))
         f.set_ptime('00:00:00')
     else:
-        f.set_target(raw_input("Enter target directory: "))
-        f.set_airdate(raw_input("Enter airing date (ex: 1st January 2022): "))
-        f.set_pdate(raw_input("Enter publish date (YYYY-MM-DD): "))
-        f.set_ptime(raw_input("Enter publish time (UTC Time HH:MM:SS): "))
+        f.set_target(input("Enter target directory: "))
+        f.set_airdate(input("Enter airing date (ex: 1st January 2022): "))
+        f.set_pdate(input("Enter publish date (YYYY-MM-DD): "))
+        f.set_ptime(input("Enter publish time (UTC Time HH:MM:SS): "))
     return f
 
 # Send POST Request to Mixcloud with passed data
@@ -246,11 +247,11 @@ def create_callback(encoder):
 # Given a key, returns the string for an iframe
 # Returns: Str
 def get_iframe(key):
-    src = "https://www.mixcloud.com/widget/iframe/?feed=" + key.replace("/", "%2F")
+    src = "https://www.mixcloud.com/widget/iframe/?hide_cover=1&?feed=" + key.replace("/", "%2F")
     width = '\"100%\"'
     height = '\"400\"'
     frameborder = '\"0\"'
-    return "<iframe width={0} height={1} {2} frameborder={3} ></iframe> \n".format(width,
+    return "<iframe width={0} height={1} src={2} frameborder={3} ></iframe> \n".format(width,
                                                                                    height, 
                                                                                    src, 
                                                                                    frameborder)
@@ -302,7 +303,7 @@ def main():
     # Store HTML embeds for future use if flag is turned on
     if flags.embed:
         print('Storing HTML iframe embeds in embedcode.txt...')
-        with open('embedcode.txt', 'w') as file:
+        with open('embedcode.txt - {0}'.format(flags.target), 'w') as file:
             for key in success_list:
                 file.write(get_iframe(key))
 
